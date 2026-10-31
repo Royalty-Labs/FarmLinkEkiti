@@ -1,0 +1,122 @@
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    Uuid,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    __table_args__ = (
+        CheckConstraint(
+            "quantity > 0",
+            name="ck_order_quantity_positive",
+        ),
+        CheckConstraint(
+            "unit_price >= 0",
+            name="ck_order_unit_price_nonnegative",
+        ),
+        CheckConstraint(
+            "total_price >= 0",
+            name="ck_order_total_price_nonnegative",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected', "
+            "'ready_for_fulfillment', 'completed', 'cancelled')",
+            name="ck_order_status_valid",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    buyer_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+
+    farmer_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
+    )
+
+    # SET NULL preserves order history if a product listing is deleted.
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+    unit: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    quantity: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    unit_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+    )
+    total_price: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2),
+        nullable=False,
+    )
+
+    delivery_address: Mapped[str] = mapped_column(
+        String(250),
+        nullable=False,
+    )
+    buyer_note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

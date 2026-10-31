@@ -31,15 +31,29 @@ class FarmerProfile(Base):
     )
     town: Mapped[str] = mapped_column(String(100), nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     verification_status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="pending",
     )
+    rejection_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
-    user: Mapped["User"] = relationship(back_populates="farmer_profile")
+    user: Mapped["User"] = relationship(
+        back_populates="farmer_profile",
+    )
