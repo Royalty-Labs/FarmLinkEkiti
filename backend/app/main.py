@@ -6,20 +6,18 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.farmers import router as farmers_router
 from app.api.routes.products import router as products_router
 from app.api.routes.orders import router as orders_router
+from app.core.config import settings
 
 
 app = FastAPI(
-    title="FarmLink Ekiti API",
+    title="FieldBasket API",
     description="Agricultural marketplace for the Ado-Ekiti pilot.",
     version="0.1.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,7 +33,7 @@ app.include_router(admin_router)
 @app.get("/", tags=["Health"])
 def root():
     return {
-        "message": "Welcome to FarmLink Ekiti API",
+        "message": "Welcome to FieldBasket API",
         "status": "running",
     }
 
@@ -44,5 +42,5 @@ def root():
 def health_check():
     return {
         "status": "healthy",
-        "service": "farmlink-ekiti-api",
+        "service": "fieldbasket-api",
     }
