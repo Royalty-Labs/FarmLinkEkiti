@@ -74,3 +74,9 @@ class Product(Base):
     )
 
     seller: Mapped["User"] = relationship(back_populates="products")
+
+    @property
+    def farm_name(self) -> str | None:
+        """Display name of the farm selling this product."""
+        profile = self.seller.farmer_profile if self.seller else None
+        return profile.farm_name if profile else None

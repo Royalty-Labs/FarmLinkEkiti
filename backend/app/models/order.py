@@ -12,7 +12,7 @@ from sqlalchemy import (
     Uuid,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -120,3 +120,19 @@ class Order(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+    buyer: Mapped["User"] = relationship(foreign_keys=[buyer_id])
+    farmer: Mapped["User"] = relationship(foreign_keys=[farmer_id])
+
+    @property
+    def buyer_name(self) -> str | None:
+        """Buyer's name, shown to the farmer fulfilling the order."""
+        return self.buyer.full_name if self.buyer else None
+
+    @property
+    def farm_name(self) -> str | None:
+        """Farm's display name, shown to the buyer."""
+        if self.farmer is None:
+            return None
+        profile = self.farmer.farmer_profile
+        return profile.farm_name if profile else self.farmer.full_name
