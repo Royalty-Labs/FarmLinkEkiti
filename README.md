@@ -1,14 +1,14 @@
-# FarmLink Ekiti
+# FieldBasket
 
-FarmLink Ekiti is a mobile-first agricultural marketplace designed to
-connect verified farmers in Ekiti State with households, traders,
-restaurants, and other buyers.
+FieldBasket (formerly FarmLink Ekiti) is a mobile-first agricultural
+marketplace designed to connect verified farmers in Ekiti State with
+households, traders, restaurants, and other buyers.
 
 ## Initial Pilot
 
 - Location: Ado-Ekiti, Ekiti State, Nigeria
 - Backend: Python and FastAPI
-- Frontend: React, TypeScript, and Vite
+- Frontend: React, TypeScript, Vite, and React Router ("Soil" design system in `frontend/src/styles/app.css`)
 - Database: PostgreSQL
 - ORM and migrations: SQLAlchemy and Alembic
 
