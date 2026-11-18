@@ -2,24 +2,72 @@
 
 :root {
   font-family: "DM Sans", sans-serif;
-  color: #1d3024;
-  background: #fafbf7;
+  color: #172b22;
+  background: #f7faf7;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
   font-optical-sizing: auto;
   font-weight: 400;
+
+  --font-body: "DM Sans", sans-serif;
+  --font-heading: "Manrope", sans-serif;
+
+  --color-primary: #087f4b;
+  --color-primary-dark: #06633b;
+  --color-primary-light: #e5f5ec;
+  --color-accent: #c5ef62;
+
+  --color-background: #f7faf7;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f0f6f1;
+
+  --color-text: #172b22;
+  --color-muted: #718078;
+  --color-border: #e4ebe5;
+
+  --color-danger: #c83e45;
+  --color-danger-light: #fff0f0;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  --shadow-sm: 0 2px 8px rgba(23, 43, 34, 0.04);
+  --shadow-md: 0 8px 24px rgba(23, 43, 34, 0.07);
+  --shadow-lg: 0 16px 40px rgba(23, 43, 34, 0.1);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-background);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  color: var(--color-text);
 }
 
 button,
@@ -46,4 +94,8 @@ input,
 select,
 textarea {
   min-width: 0;
+}
+
+img {
+  max-width: 100%;
 }

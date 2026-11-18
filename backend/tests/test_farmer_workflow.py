@@ -584,3 +584,161 @@ def test_public_catalog_hides_unavailable_and_empty_stock(workflow):
     )
     assert restored.status_code == 200, restored.text
     assert client.get(f"/products/{product_id}").status_code == 404
+
+
+def _create_approved_product_for_image_test(client, session_factory, email):
+    """Create an approved farmer and a product for image-upload tests."""
+    farmer_headers = register_and_login(client, email, "farmer")
+    profile_response = create_profile(client, farmer_headers)
+    assert profile_response.status_code == 201, profile_response.text
+
+    admin_email = f"admin-{email}"
+    create_admin(session_factory, email=admin_email)
+    admin_headers = login_existing(client, admin_email)
+    approve_profile_for_products(
+        client, admin_headers, profile_response.json()["id"]
+    )
+
+    product_response = client.post(
+        "/products",
+        headers=farmer_headers,
+        json=product_payload(),
+    )
+    assert product_response.status_code == 201, product_response.text
+
+    return farmer_headers, product_response.json()
+
+
+def _make_test_png():
+    """Generate a small valid PNG image in memory."""
+    from io import BytesIO
+    from PIL import Image
+
+    image_buffer = BytesIO()
+    Image.new("RGB", (20, 20), "green").save(image_buffer, format="PNG")
+    return image_buffer.getvalue()
+
+
+def _configure_test_cloudinary(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "cloudinary_cloud_name", "test-cloud")
+    monkeypatch.setattr(settings, "cloudinary_api_key", "test-key")
+    monkeypatch.setattr(settings, "cloudinary_api_secret", "test-secret")
+
+
+def test_farmer_can_upload_and_replace_product_image(workflow, monkeypatch):
+    from unittest.mock import patch
+
+    client, session_factory = workflow
+    farmer_headers, product = _create_approved_product_for_image_test(
+        client, session_factory, "image-owner@example.com"
+    )
+    _configure_test_cloudinary(monkeypatch)
+
+    first_url = "https://res.cloudinary.com/test-cloud/image/upload/product-first.png"
+    second_url = "https://res.cloudinary.com/test-cloud/image/upload/product-second.png"
+
+    with patch(
+        "app.api.routes.products.cloudinary.uploader.upload",
+        side_effect=[
+            {"secure_url": first_url},
+            {"secure_url": second_url},
+        ],
+    ) as cloudinary_upload:
+        first_response = client.post(
+            f"/products/{product['id']}/image",
+            headers=farmer_headers,
+            files={"file": ("tomatoes.png", _make_test_png(), "image/png")},
+        )
+
+        assert first_response.status_code == 200, first_response.text
+        assert first_response.json()["image_url"] == first_url
+
+        replacement_response = client.post(
+            f"/products/{product['id']}/image",
+            headers=farmer_headers,
+            files={"file": ("tomatoes-new.png", _make_test_png(), "image/png")},
+        )
+
+        assert replacement_response.status_code == 200, replacement_response.text
+        assert replacement_response.json()["image_url"] == second_url
+        assert cloudinary_upload.call_count == 2
+
+    # Confirm the latest image URL was persisted in the database.
+    saved_product = client.get(f"/products/{product['id']}")
+    assert saved_product.status_code == 200
+    assert saved_product.json()["image_url"] == second_url
+
+
+def test_product_image_upload_rejects_invalid_image(workflow, monkeypatch):
+    from unittest.mock import patch
+
+    client, session_factory = workflow
+    farmer_headers, product = _create_approved_product_for_image_test(
+        client, session_factory, "invalid-image-owner@example.com"
+    )
+    _configure_test_cloudinary(monkeypatch)
+
+    with patch(
+        "app.api.routes.products.cloudinary.uploader.upload"
+    ) as cloudinary_upload:
+        response = client.post(
+            f"/products/{product['id']}/image",
+            headers=farmer_headers,
+            files={"file": ("fake.png", b"this is not an image", "image/png")},
+        )
+
+    assert response.status_code == 400, response.text
+    cloudinary_upload.assert_not_called()
+
+
+def test_product_image_upload_requires_cloudinary_configuration(
+    workflow, monkeypatch
+):
+    client, session_factory = workflow
+    farmer_headers, product = _create_approved_product_for_image_test(
+        client, session_factory, "unconfigured-image-owner@example.com"
+    )
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "cloudinary_cloud_name", None)
+    monkeypatch.setattr(settings, "cloudinary_api_key", None)
+    monkeypatch.setattr(settings, "cloudinary_api_secret", None)
+
+    response = client.post(
+        f"/products/{product['id']}/image",
+        headers=farmer_headers,
+        files={"file": ("tomatoes.png", _make_test_png(), "image/png")},
+    )
+
+    assert response.status_code == 503, response.text
+
+
+def test_farmer_cannot_upload_image_to_another_farmers_product(
+    workflow, monkeypatch
+):
+    from unittest.mock import patch
+
+    client, session_factory = workflow
+
+    owner_headers, product = _create_approved_product_for_image_test(
+        client, session_factory, "image-product-owner@example.com"
+    )
+    other_farmer_headers, _ = _create_approved_product_for_image_test(
+        client, session_factory, "other-image-farmer@example.com"
+    )
+    _configure_test_cloudinary(monkeypatch)
+
+    with patch(
+        "app.api.routes.products.cloudinary.uploader.upload"
+    ) as cloudinary_upload:
+        response = client.post(
+            f"/products/{product['id']}/image",
+            headers=other_farmer_headers,
+            files={"file": ("tomatoes.png", _make_test_png(), "image/png")},
+        )
+
+    assert response.status_code == 404, response.text
+    cloudinary_upload.assert_not_called()

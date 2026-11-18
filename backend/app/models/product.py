@@ -52,6 +52,10 @@ class Product(Base):
         nullable=False,
     )
     location: Mapped[str] = mapped_column(String(120), nullable=False)
+    image_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
     is_available: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

@@ -102,6 +102,7 @@ class ProductResponse(BaseModel):
     unit: str
     quantity_available: Decimal
     location: str
+    image_url: str | None
     is_available: bool
     created_at: datetime
     updated_at: datetime

@@ -1,10 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiRequest, clearToken, getToken, saveToken } from "./api/client";
-import type { AuthResponse, FarmerProfile, Product, User } from "./types";
+import {
+  apiRequest,
+  clearToken,
+  getToken,
+  saveToken,
+  uploadProductImage,
+} from "./api/client";
+
+import type {
+  AuthResponse,
+  FarmerProfile,
+  Order,
+  Product,
+  User,
+} from "./types";
 import AdminDashboard from "./AdminDashboard";
 import "./App.css";
-
-type Page = "marketplace" | "dashboard" | "account" | "admin";
+type Page =
+  | "marketplace"
+  | "product"
+  | "orders"
+  | "incoming-orders"
+  | "dashboard"
+  | "account"
+  | "admin";
 type AuthMode = "login" | "register";
 
 const money = (value: number | string) =>
@@ -15,6 +34,16 @@ const money = (value: number | string) =>
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [myOrders, setMyOrders] = useState<Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [farmerOrders, setFarmerOrders] = useState<Order[]>([]);
+  const [farmerOrdersLoading, setFarmerOrdersLoading] = useState(false);
+  const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [orderQuantity, setOrderQuantity] = useState("1");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [buyerNote, setBuyerNote] = useState("");
   const [myProducts, setMyProducts] = useState<Product[]>([]);
   const [profile, setProfile] = useState<FarmerProfile | null>(null);
   const [page, setPage] = useState<Page>("marketplace");
@@ -48,6 +77,24 @@ function App() {
     unit: "kg",
     quantity_available: "",
   });
+
+  const [productImage, setProductImage] = useState<File | null>(null);
+  const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
+
+  useEffect(() => {
+  if (!productImage) {
+    setProductImagePreview(null);
+    return;
+  }
+
+  const previewUrl = URL.createObjectURL(productImage);
+  setProductImagePreview(previewUrl);
+
+  return () => {
+    URL.revokeObjectURL(previewUrl);
+  };
+}, [productImage]);
+
 
   const loadProducts = useCallback(async () => {
     try {
@@ -114,6 +161,46 @@ function App() {
     };
   }, []);
 
+    const loadMyOrders = useCallback(async () => {
+  if (!user || user.role !== "buyer") {
+    setMyOrders([]);
+    return;
+  }
+
+  setOrdersLoading(true);
+
+  try {
+    const result = await apiRequest<Order[]>("/orders/mine");
+    setMyOrders(result);
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : "Could not load your orders.",
+    );
+  } finally {
+    setOrdersLoading(false);
+  }
+}, [user]);
+
+    const loadFarmerOrders = useCallback(async () => {
+  if (!user || user.role !== "farmer") {
+    setFarmerOrders([]);
+    return;
+  }
+
+  setFarmerOrdersLoading(true);
+
+  try {
+    const result = await apiRequest<Order[]>("/orders/farmer");
+    setFarmerOrders(result);
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : "Could not load incoming orders.",
+    );
+  } finally {
+    setFarmerOrdersLoading(false);
+  }
+}, [user]);
+
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
@@ -121,6 +208,16 @@ function App() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    void loadMyOrders();
+  }, [loadMyOrders]);
+
+  useEffect(() => {
+    void loadFarmerOrders();
+  }, [loadFarmerOrders]);
+
+
 
   async function submitAuth(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -172,6 +269,7 @@ function App() {
     setUser(null);
     setProfile(null);
     setMyProducts([]);
+    setMyOrders([]);
     setPage("marketplace");
     setMessage("You have signed out.");
     setError("");
@@ -211,39 +309,184 @@ function App() {
   }
 
   async function submitProduct(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    setMessage("");
+  event.preventDefault();
+  setBusy(true);
+  setError("");
+  setMessage("");
 
-    try {
-      await apiRequest<Product>("/products", {
-        method: "POST",
-        body: JSON.stringify({
-          ...productForm,
-          description: productForm.description || null,
-          price_per_unit: Number(productForm.price_per_unit),
-          quantity_available: Number(productForm.quantity_available),
-        }),
-      });
+  try {
+    const createdProduct = await apiRequest<Product>("/products", {
+      method: "POST",
+      body: JSON.stringify({
+        ...productForm,
+        description: productForm.description || null,
+        price_per_unit: Number(productForm.price_per_unit),
+        quantity_available: Number(productForm.quantity_available),
+      }),
+    });
 
-      setProductForm({
-        name: "",
-        description: "",
-        category: "Vegetables",
-        price_per_unit: "",
-        unit: "kg",
-        quantity_available: "",
-      });
-      setMessage("Your product has been listed.");
-      await loadDashboard();
-      await loadProducts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not list product.");
-    } finally {
-      setBusy(false);
+    if (productImage) {
+      await uploadProductImage(createdProduct.id, productImage);
     }
+
+    setProductForm({
+      name: "",
+      description: "",
+      category: "Vegetables",
+      price_per_unit: "",
+      unit: "kg",
+      quantity_available: "",
+    });
+
+    setProductImage(null);
+
+    setMessage("Your product has been listed.");
+    await loadDashboard();
+    await loadProducts();
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Could not list product.");
+  } finally {
+    setBusy(false);
   }
+}
+
+
+  async function submitOrder(event: React.FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+
+  if (!selectedProduct) return;
+
+  if (!user) {
+    setPage("account");
+    setAuthMode("login");
+    setMessage("Sign in with a buyer account to place an order.");
+    return;
+  }
+
+  if (user.role !== "buyer") {
+    setError("Only buyer accounts can place orders.");
+    return;
+  }
+
+  const quantity = Number(orderQuantity);
+
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    setError("Enter a valid quantity greater than zero.");
+    return;
+  }
+
+  if (quantity > Number(selectedProduct.quantity_available)) {
+    setError("The requested quantity exceeds the available stock.");
+    return;
+  }
+
+  setBusy(true);
+  setError("");
+  setMessage("");
+
+  try {
+    await apiRequest<Order>("/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        product_id: selectedProduct.id,
+        quantity,
+        delivery_address: deliveryAddress.trim(),
+        buyer_note: buyerNote.trim() || null,
+      }),
+    });
+
+   setMessage(`Your order for ${selectedProduct.name} has been placed.`);
+   setSelectedProduct(null);
+   setOrderQuantity("1");
+   setDeliveryAddress("");
+   setBuyerNote("");
+
+   await loadProducts();
+   await loadMyOrders();
+
+   setPage("orders");
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Could not place your order.");
+  } finally {
+    setBusy(false);
+  }
+}
+
+  async function cancelOrder(order: Order) {
+  if (order.status !== "pending") return;
+
+  const confirmed = window.confirm(
+    `Cancel your order for ${order.product_name}?`,
+  );
+
+  if (!confirmed) return;
+
+  setBusy(true);
+  setError("");
+  setMessage("");
+
+  try {
+    await apiRequest<Order>(`/orders/${order.id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+
+    setMessage("Your order has been cancelled.");
+    await loadMyOrders();
+    await loadProducts();
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : "Could not cancel your order.",
+    );
+  } finally {
+    setBusy(false);
+  }
+}
+
+  async function updateFarmerOrderStatus(
+  order: Order,
+  status: "accepted" | "rejected" | "ready_for_fulfillment",
+) {
+  if (status === "rejected" && !rejectionReason.trim()) {
+    setError("Please provide a reason for rejecting this order.");
+    return;
+  }
+
+  setBusy(true);
+  setError("");
+  setMessage("");
+
+  try {
+    await apiRequest<Order>(`/orders/${order.id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status,
+        rejection_reason:
+          status === "rejected" ? rejectionReason.trim() : null,
+      }),
+    });
+
+    const messages = {
+      accepted: "Order accepted successfully.",
+      rejected: "Order rejected. The reserved stock has been restored.",
+      ready_for_fulfillment: "Order marked as ready for fulfillment.",
+    };
+
+    setMessage(messages[status]);
+    setRejectingOrderId(null);
+    setRejectionReason("");
+
+    await loadFarmerOrders();
+    await loadDashboard();
+    await loadProducts();
+  } catch (err) {
+    setError(
+      err instanceof Error ? err.message : "Could not update the order.",
+    );
+  } finally {
+    setBusy(false);
+  }
+}
 
   async function toggleProduct(product: Product) {
     setError("");
@@ -260,7 +503,7 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update product.");
     }
-  }
+}
 
   async function deleteProduct(product: Product) {
     if (!window.confirm(`Delete "${product.name}" from your listings?`)) return;
@@ -276,7 +519,7 @@ function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete product.");
     }
-  }
+}
 
   const categories = [
     "Vegetables",
@@ -310,6 +553,14 @@ function App() {
           >
             Marketplace
           </button>
+          {user?.role === "buyer" && (
+  <button
+    className={page === "orders" ? "nav-link active" : "nav-link"}
+    onClick={() => setPage("orders")}
+  >
+    My Orders
+  </button>
+)}
           {user?.role === "farmer" && (
             <button
               className={page === "dashboard" ? "nav-link active" : "nav-link"}
@@ -318,6 +569,21 @@ function App() {
               Farmer dashboard
             </button>
           )}
+          {user?.role === "farmer" && (
+  <button
+    className={
+      page === "incoming-orders" ? "nav-link active" : "nav-link"
+    }
+    onClick={() => setPage("incoming-orders")}
+  >
+    Incoming orders
+    {farmerOrders.filter((order) => order.status === "pending").length > 0 && (
+      <span className="nav-count">
+        {farmerOrders.filter((order) => order.status === "pending").length}
+      </span>
+    )}
+  </button>
+)}
           {user?.role === "admin" && (
             <button
               className={page === "admin" ? "nav-link active" : "nav-link"}
@@ -454,19 +720,55 @@ function App() {
               {products.length ? (
                 <div className="product-grid">
                   {products.map((product, index) => (
-                    <article className="product-card" key={product.id}>
+                          <article
+                              className="product-card"
+                              key={product.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setSelectedProduct(product);
+                                setOrderQuantity("1");
+                                setDeliveryAddress("");
+                                setBuyerNote("");
+                                setError("");
+                                setMessage("");
+                                setPage("product");
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setSelectedProduct(product);
+                                  setOrderQuantity("1");
+                                  setDeliveryAddress("");
+                                  setBuyerNote("");
+                                  setError("");
+                                  setMessage("");
+                                  setPage("product");
+                                }
+                              }}
+                            >
                       <div className={`product-visual product-visual-${index % 5}`}>
                         <span className="product-category">{product.category}</span>
-                        <span className="product-emoji" aria-hidden="true">
-                          {({
-                            Vegetables: "🥬",
-                            Fruits: "🍊",
-                            Grains: "🌽",
-                            Tubers: "🍠",
-                            Poultry: "🐓",
-                            Livestock: "🐐",
-                          } as Record<string, string>)[product.category] ?? "🌱"}
-                        </span>
+                        {product.image_url ? (
+                          <img
+                            className="product-photo"
+                            src={product.image_url}
+                            alt={product.name}
+                          />
+                        ) : (
+                          <span className="product-emoji" aria-hidden="true">
+                            {({
+                              Vegetables: "🥬",
+                              Fruits: "🍊",
+                              Grains: "🌽",
+                              Tubers: "🍠",
+                              Poultry: "🐓",
+                              Livestock: "🐐",
+                            } as Record<string, string>)[product.category] ?? "🌱"}
+                          </span>
+                        )}
+
+                        <span className="product-category">{product.category}</span>
                       </div>
                       <div className="product-details">
                         <div className="product-title-row">
@@ -525,6 +827,301 @@ function App() {
             </section>
           </>
         )}
+
+
+                        {page === "product" && selectedProduct && (
+                  <section className="product-detail-section">
+                    <button
+                      className="button button-outline"
+                      onClick={() => setPage("marketplace")}
+                    >
+                      ← Back to marketplace
+                    </button>
+
+                    <div className="product-detail-layout">
+                      <div
+                        className={`product-detail-visual product-visual-${
+                          Math.max(0, products.findIndex((item) => item.id === selectedProduct.id)) % 5
+                        }`}
+                      >
+                        {selectedProduct.image_url ? (
+                          <img
+                            className="product-detail-photo"
+                            src={selectedProduct.image_url}
+                            alt={selectedProduct.name}
+                          />
+                        ) : (
+                          <span className="product-detail-emoji" aria-hidden="true">
+                            {({
+                              Vegetables: "🥬",
+                              Fruits: "🍊",
+                              Grains: "🌽",
+                              Tubers: "🍠",
+                              Poultry: "🐓",
+                              Livestock: "🐐",
+                            } as Record<string, string>)[selectedProduct.category] ?? "🌱"}
+                          </span>
+                        )}
+
+                        <span className="product-category">{selectedProduct.category}</span>
+                      </div>
+
+                      <div className="product-detail-content">
+                        <span className="eyebrow">FRESH FROM EKITI</span>
+                        <h1>{selectedProduct.name}</h1>
+                        <p className="product-detail-location">⌖ {selectedProduct.location}</p>
+
+                        <div className="product-detail-price">
+                          {money(selectedProduct.price_per_unit)}
+                          <span> / {selectedProduct.unit}</span>
+                        </div>
+
+                        <div className="product-detail-stock">
+                          <span className="available-dot" />
+                          {Number(selectedProduct.quantity_available).toLocaleString()}{" "}
+                          {selectedProduct.unit} available
+                        </div>
+
+                        <div className="product-detail-description">
+                          <h2>About this produce</h2>
+                          <p>
+                            {selectedProduct.description ||
+                              `Explore ${selectedProduct.name.toLowerCase()} sourced from a local farm in ${selectedProduct.location}. Contact and delivery arrangements can be discussed through your order details.`}
+                          </p>
+                        </div>
+
+                        {selectedProduct.is_available &&
+                        Number(selectedProduct.quantity_available) > 0 ? (
+                          user?.role === "farmer" || user?.role === "admin" ? (
+                            <div className="status-note">
+                              Ordering is available to buyer accounts. Sign in with a buyer account to place an order.
+                            </div>
+                          ) : (
+                            <form onSubmit={submitOrder} className="product-order-form">
+                              <h2>Place your order</h2>
+
+                              <label>
+                                Quantity ({selectedProduct.unit})
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  max={Number(selectedProduct.quantity_available)}
+                                  step="0.01"
+                                  required
+                                  value={orderQuantity}
+                                  onChange={(event) => setOrderQuantity(event.target.value)}
+                                />
+                              </label>
+
+                              <div className="order-total">
+                                <span>Estimated total</span>
+                                <strong>
+                                  {money(
+                                    Number(selectedProduct.price_per_unit) *
+                                      Math.max(0, Number(orderQuantity) || 0),
+                                  )}
+                                </strong>
+                              </div>
+
+                              <label>
+                                Delivery address
+                                <textarea
+                                  required
+                                  minLength={5}
+                                  maxLength={250}
+                                  rows={3}
+                                  value={deliveryAddress}
+                                  onChange={(event) => setDeliveryAddress(event.target.value)}
+                                  placeholder="Enter the address where your order should be delivered"
+                                />
+                              </label>
+
+                              <label>
+                                Note to the farmer (optional)
+                                <textarea
+                                  maxLength={2000}
+                                  rows={2}
+                                  value={buyerNote}
+                                  onChange={(event) => setBuyerNote(event.target.value)}
+                                  placeholder="Any helpful delivery or order instructions"
+                                />
+                              </label>
+
+                              {!user && (
+                                <p className="muted-copy">
+                                  You'll need to sign in with a buyer account to place your order.
+                                </p>
+                              )}
+
+                              <button
+                                type="submit"
+                                className="button button-primary button-full"
+                                disabled={busy}
+                              >
+                                {busy ? "Placing order…" : "Place order"}
+                              </button>
+                            </form>
+                          )
+                        ) : (
+                          <div className="status-note">
+                            This product is currently out of stock.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+         {page === "orders" && user?.role === "buyer" && (
+  <section className="orders-section">
+    <div className="orders-heading">
+      <div>
+        <span className="eyebrow">YOUR PURCHASES</span>
+        <h1>My Orders</h1>
+        <p>Keep track of your requests and their progress.</p>
+      </div>
+
+      <button
+        className="button button-outline"
+        onClick={() => void loadMyOrders()}
+        disabled={ordersLoading}
+      >
+        {ordersLoading ? "Refreshing…" : "Refresh orders ↻"}
+      </button>
+    </div>
+
+    {ordersLoading ? (
+      <div className="empty-state">
+        <p>Loading your orders…</p>
+      </div>
+    ) : myOrders.length === 0 ? (
+      <div className="empty-state">
+        <span className="empty-icon">🧺</span>
+        <h3>No orders yet</h3>
+        <p>
+          When you order fresh produce from the marketplace,
+          your requests will appear here.
+        </p>
+        <button
+          className="button button-primary"
+          onClick={() => setPage("marketplace")}
+        >
+          Explore marketplace
+        </button>
+      </div>
+    ) : (
+      <div className="orders-list">
+        {myOrders.map((order) => (
+          <article className="order-card" key={order.id}>
+            <div className="order-card-heading">
+              <div>
+                <span className="eyebrow">ORDER REQUEST</span>
+                <h2>{order.product_name}</h2>
+                <p>
+                  Placed {new Date(order.created_at).toLocaleString("en-NG")}
+                </p>
+              </div>
+
+              <span className={`order-status status-${order.status}`}>
+                {order.status.replaceAll("_", " ")}
+              </span>
+            </div>
+
+            <div className="order-information">
+              <div>
+                <span>Quantity</span>
+                <strong>
+                  {Number(order.quantity).toLocaleString()} {order.unit}
+                </strong>
+              </div>
+
+              <div>
+                <span>Price per unit</span>
+                <strong>{money(order.unit_price)}</strong>
+              </div>
+
+              <div>
+                <span>Order total</span>
+                <strong>{money(order.total_price)}</strong>
+              </div>
+            </div>
+
+            <div className="order-delivery">
+              <strong>Delivery address</strong>
+              <p>{order.delivery_address}</p>
+            </div>
+
+            {order.buyer_note && (
+              <div className="order-delivery">
+                <strong>Your note to the farmer</strong>
+                <p>{order.buyer_note}</p>
+              </div>
+            )}
+
+            {order.rejection_reason && (
+              <div className="rejection-note">
+                <strong>Reason for rejection</strong>
+                <p>{order.rejection_reason}</p>
+              </div>
+            )}
+
+            <div className="order-card-footer">
+              <span>
+                Last updated:{" "}
+                {new Date(order.updated_at).toLocaleString("en-NG")}
+              </span>
+
+              {order.status === "pending" && (
+                <button
+                  className="text-button danger-text"
+                  onClick={() => void cancelOrder(order)}
+                  disabled={busy}
+                >
+                  Cancel order
+                </button>
+              )}
+
+              {order.status === "ready_for_fulfillment" && (
+                <button
+                  className="button button-primary button-small"
+                  onClick={async () => {
+                    setBusy(true);
+                    setError("");
+                    setMessage("");
+
+                    try {
+                      await apiRequest<Order>(
+                        `/orders/${order.id}/status`,
+                        {
+                          method: "PATCH",
+                          body: JSON.stringify({ status: "completed" }),
+                        },
+                      );
+
+                      setMessage("Order marked as completed.");
+                      await loadMyOrders();
+                    } catch (err) {
+                      setError(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not complete the order.",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  disabled={busy}
+                >
+                  Confirm completion
+                </button>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    )}
+  </section>
+)}
 
         {page === "account" && (
           <section className="account-layout">
@@ -625,6 +1222,234 @@ function App() {
         {page === "admin" && user?.role === "admin" && (
           <AdminDashboard onMessage={setMessage} onError={setError} />
         )}
+
+        {page === "incoming-orders" && user?.role === "farmer" && (
+  <section className="orders-section">
+    <div className="orders-heading">
+      <div>
+        <span className="eyebrow">FARMER WORKSPACE</span>
+        <h1>Incoming orders</h1>
+        <p>Review buyer requests and manage your order fulfilment.</p>
+      </div>
+
+      <button
+        className="button button-outline"
+        onClick={() => void loadFarmerOrders()}
+        disabled={farmerOrdersLoading}
+      >
+        {farmerOrdersLoading ? "Refreshing…" : "Refresh orders ↻"}
+      </button>
+    </div>
+
+    {farmerOrdersLoading ? (
+      <div className="empty-state">
+        <p>Loading incoming orders…</p>
+      </div>
+    ) : farmerOrders.length === 0 ? (
+      <div className="empty-state">
+        <span className="empty-icon">📦</span>
+        <h3>No incoming orders yet</h3>
+        <p>
+          Orders placed for your listed products will appear here.
+        </p>
+        <button
+          className="button button-primary"
+          onClick={() => setPage("dashboard")}
+        >
+          Manage my products
+        </button>
+      </div>
+    ) : (
+      <div className="orders-list">
+        {farmerOrders.map((order) => (
+          <article className="order-card" key={order.id}>
+            <div className="order-card-heading">
+              <div>
+                <span className="eyebrow">ORDER REQUEST</span>
+                <h2>{order.product_name}</h2>
+                <p>
+                  Received{" "}
+                  {new Date(order.created_at).toLocaleString("en-NG")}
+                </p>
+              </div>
+
+              <span className={`order-status status-${order.status}`}>
+                {order.status.replace(/_/g, " ")}
+              </span>
+            </div>
+
+            <div className="order-information">
+              <div>
+                <span>Quantity requested</span>
+                <strong>
+                  {Number(order.quantity).toLocaleString()} {order.unit}
+                </strong>
+              </div>
+
+              <div>
+                <span>Price per unit</span>
+                <strong>{money(order.unit_price)}</strong>
+              </div>
+
+              <div>
+                <span>Order total</span>
+                <strong>{money(order.total_price)}</strong>
+              </div>
+            </div>
+
+            <div className="order-delivery">
+              <strong>Buyer's delivery address</strong>
+              <p>{order.delivery_address}</p>
+            </div>
+
+            {order.buyer_note && (
+              <div className="order-delivery">
+                <strong>Buyer's note</strong>
+                <p>{order.buyer_note}</p>
+              </div>
+            )}
+
+            {order.rejection_reason && (
+              <div className="rejection-note">
+                <strong>Rejection reason</strong>
+                <p>{order.rejection_reason}</p>
+              </div>
+            )}
+
+            {order.status === "pending" && (
+              <div className="farmer-order-actions">
+                {rejectingOrderId === order.id ? (
+                  <form
+                    className="rejection-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void updateFarmerOrderStatus(order, "rejected");
+                    }}
+                  >
+                    <label>
+                      Reason for rejecting this order
+                      <textarea
+                        required
+                        minLength={3}
+                        rows={3}
+                        value={rejectionReason}
+                        onChange={(event) =>
+                          setRejectionReason(event.target.value)
+                        }
+                        placeholder="Explain why you cannot fulfil this order."
+                      />
+                    </label>
+
+                    <div className="action-buttons">
+                      <button
+                        type="submit"
+                        className="button button-danger"
+                        disabled={busy || !rejectionReason.trim()}
+                      >
+                        {busy ? "Submitting…" : "Confirm rejection"}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="button button-outline"
+                        onClick={() => {
+                          setRejectingOrderId(null);
+                          setRejectionReason("");
+                          setError("");
+                        }}
+                        disabled={busy}
+                      >
+                        Go back
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="action-buttons">
+                    <button
+                      className="button button-primary"
+                      onClick={() =>
+                        void updateFarmerOrderStatus(order, "accepted")
+                      }
+                      disabled={busy}
+                    >
+                      Accept order
+                    </button>
+
+                    <button
+                      className="button button-outline danger-text"
+                      onClick={() => {
+                        setRejectingOrderId(order.id);
+                        setRejectionReason("");
+                        setError("");
+                      }}
+                      disabled={busy}
+                    >
+                      Reject order
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {order.status === "accepted" && (
+              <div className="farmer-order-actions">
+                <p className="status-note">
+                  You have accepted this order. Mark it as ready when it is
+                  prepared for fulfilment.
+                </p>
+
+                <button
+                  className="button button-primary"
+                  onClick={() =>
+                    void updateFarmerOrderStatus(
+                      order,
+                      "ready_for_fulfillment",
+                    )
+                  }
+                  disabled={busy}
+                >
+                  Mark as ready for fulfillment
+                </button>
+              </div>
+            )}
+
+            {order.status === "ready_for_fulfillment" && (
+              <div className="status-note">
+                This order is ready for fulfilment. The buyer can confirm
+                completion from their My Orders page.
+              </div>
+            )}
+
+            {order.status === "completed" && (
+              <div className="success-note">
+                This order has been completed.
+              </div>
+            )}
+
+            {order.status === "rejected" && (
+              <div className="status-note">
+                You rejected this order.
+              </div>
+            )}
+
+            {order.status === "cancelled" && (
+              <div className="status-note">
+                The buyer cancelled this order.
+              </div>
+            )}
+
+            <div className="order-card-footer">
+              <span>
+                Last updated:{" "}
+                {new Date(order.updated_at).toLocaleString("en-NG")}
+              </span>
+            </div>
+          </article>
+        ))}
+      </div>
+    )}
+  </section>
+)}
 
         {page === "dashboard" && user?.role === "farmer" && (
           <section className="dashboard-section">
@@ -803,6 +1628,33 @@ function App() {
                             placeholder="e.g. 50"
                           />
                         </label>
+                      </div>
+
+                      <div className="form-field">
+                       <label htmlFor="product-image">Product image</label>
+
+                          <input
+                            id="product-image"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              setProductImage(file);
+                            }}
+                          />
+
+                          <small>
+                            Upload a clear photo of your product. Accepted formats: JPG, PNG and WebP.
+                          </small>
+
+                          {productImagePreview && (
+                            <div className="image-preview">
+                              <img
+                                src={productImagePreview}
+                                alt="Selected product preview"
+                              />
+                            </div>
+                          )}
                       </div>
                       <button className="button button-primary" disabled={busy}>
                         {busy ? "Publishing…" : "Publish product"}

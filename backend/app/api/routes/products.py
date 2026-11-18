@@ -1,18 +1,38 @@
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+import cloudinary
+import cloudinary.uploader
+from cloudinary.exceptions import Error as CloudinaryError
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import require_role
+from app.core.config import settings
 from app.db.session import get_db
 from app.models import FarmerProfile, Product, User
 from app.schemas.product import ProductCreate, ProductResponse, ProductUpdate
 
-
 router = APIRouter(prefix="/products", tags=["Products"])
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+ALLOWED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+MAX_IMAGE_PIXELS = 25_000_000
 
 
 def get_approved_farmer_profile(
@@ -198,3 +218,126 @@ def delete_product(
     db.delete(product)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.post(
+    "/{product_id}/image",
+    response_model=ProductResponse,
+)
+async def upload_product_image(
+    product_id: UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_role("farmer")),
+    db: Session = Depends(get_db),
+) -> Product:
+    # Only approved farmers can upload product images.
+    get_approved_farmer_profile(current_user, db)
+
+    # Farmers can only upload images to their own products.
+    product = get_owned_product(product_id, current_user, db)
+
+    # Check Cloudinary configuration.
+    if not all(
+        (
+            settings.cloudinary_cloud_name,
+            settings.cloudinary_api_key,
+            settings.cloudinary_api_secret,
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Product image storage is not configured.",
+        )
+
+    # Read at most 5 MB plus one byte to detect oversized files.
+    image_bytes = await file.read(MAX_IMAGE_SIZE + 1)
+
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded image is empty.",
+        )
+
+    if len(image_bytes) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image size must not exceed 5 MB.",
+        )
+
+    # Validate the actual image rather than trusting its filename or MIME type.
+    try:
+        image = Image.open(BytesIO(image_bytes))
+
+        if image.format not in ALLOWED_IMAGE_FORMATS:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Only JPEG, PNG and WebP images are supported.",
+            )
+
+        if image.width * image.height > MAX_IMAGE_PIXELS:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Image dimensions are too large.",
+            )
+
+        image.verify()
+
+    except HTTPException:
+        raise
+
+    except (
+        UnidentifiedImageError,
+        OSError,
+        Image.DecompressionBombError,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid image.",
+        ) from None
+
+    # Configure Cloudinary using environment-based settings.
+    cloudinary.config(
+        cloud_name=settings.cloudinary_cloud_name,
+        api_key=settings.cloudinary_api_key,
+        api_secret=settings.cloudinary_api_secret,
+        secure=True,
+    )
+
+    try:
+        upload_result = await run_in_threadpool(
+            cloudinary.uploader.upload,
+            image_bytes,
+            folder="farmlink-ekiti/products",
+            public_id=f"product_{product.id}",
+            overwrite=True,
+            invalidate=True,
+            resource_type="image",
+        )
+
+    except CloudinaryError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The image storage service could not save your image.",
+        ) from None
+
+    image_url = upload_result.get("secure_url")
+
+    if not image_url:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The image storage service returned an invalid response.",
+        )
+
+    product.image_url = image_url
+
+    try:
+        db.commit()
+        db.refresh(product)
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The product image could not be saved.",
+        ) from None
+
+    return product
