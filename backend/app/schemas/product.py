@@ -103,6 +103,7 @@ class ProductResponse(BaseModel):
     quantity_available: Decimal
     location: str
     image_url: str | None
+    farm_name: str | None = None
     is_available: bool
     created_at: datetime
     updated_at: datetime

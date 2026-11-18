@@ -291,3 +291,22 @@ def test_buyer_cannot_create_orders_and_farmer_cannot_list_buyer_orders(workflow
     assert buyer_attempt.status_code == 403
 
     assert get_stock(client, product["id"]) == 25.0
+
+
+def test_orders_and_products_include_display_names(workflow):
+    client, session_factory = workflow
+    farmer_headers, buyer_headers, product = create_marketplace(
+        client, session_factory
+    )
+
+    listing = client.get("/products")
+    assert listing.status_code == 200, listing.text
+    assert listing.json()[0]["farm_name"] == "Green Acres"
+
+    response = place_order(client, buyer_headers, product["id"])
+    assert response.status_code == 201, response.text
+    assert response.json()["farm_name"] == "Green Acres"
+
+    farmer_orders = client.get("/orders/farmer", headers=farmer_headers)
+    assert farmer_orders.status_code == 200, farmer_orders.text
+    assert farmer_orders.json()[0]["buyer_name"] == "Test Buyer"

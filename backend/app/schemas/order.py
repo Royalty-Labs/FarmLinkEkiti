@@ -105,5 +105,7 @@ class OrderResponse(BaseModel):
     buyer_note: str | None
     rejection_reason: str | None
     status: OrderStatus
+    buyer_name: str | None = None
+    farm_name: str | None = None
     created_at: datetime
     updated_at: datetime

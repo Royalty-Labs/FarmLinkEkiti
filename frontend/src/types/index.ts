@@ -1,12 +1,16 @@
+export type Role = "buyer" | "farmer" | "admin";
+
 export type User = {
   id: string;
   full_name: string;
   email: string;
-  role: "buyer" | "farmer" | "admin" | string;
+  role: Role | string;
   is_active: boolean;
   is_verified: boolean;
   created_at: string;
 };
+
+export type VerificationStatus = "pending" | "approved" | "rejected";
 
 export type FarmerProfile = {
   id: string;
@@ -16,10 +20,14 @@ export type FarmerProfile = {
   state: string;
   town: string;
   address: string | null;
-  verification_status: "pending" | "approved" | "rejected";
+  verification_status: VerificationStatus;
   rejection_reason: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type AdminFarmerProfile = FarmerProfile & {
+  user: { id: string; full_name: string; email: string };
 };
 
 export type Product = {
@@ -34,6 +42,7 @@ export type Product = {
   location: string;
   is_available: boolean;
   image_url: string | null;
+  farm_name: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,7 +52,6 @@ export type AuthResponse = {
   token_type: string;
   user: User;
 };
-
 
 export type OrderStatus =
   | "pending"
@@ -67,6 +75,8 @@ export type Order = {
   buyer_note: string | null;
   rejection_reason: string | null;
   status: OrderStatus;
+  buyer_name: string | null;
+  farm_name: string | null;
   created_at: string;
   updated_at: string;
 };

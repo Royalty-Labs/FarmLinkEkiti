@@ -1,6 +1,18 @@
+import type { Product } from "../types";
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001"
 ).replace(/\/$/, "");
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 export function getToken(): string | null {
   return localStorage.getItem("farmlink_access_token");
@@ -22,12 +34,12 @@ export async function apiRequest<T>(
   const headers = new Headers(options.headers);
 
   if (
-  options.body &&
-  !(options.body instanceof FormData) &&
-  !headers.has("Content-Type")
-) {
-  headers.set("Content-Type", "application/json");
-}
+    options.body &&
+    !(options.body instanceof FormData) &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set("Content-Type", "application/json");
+  }
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -53,7 +65,7 @@ export async function apiRequest<T>(
       // Keep the fallback message when the response isn't JSON.
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
@@ -66,11 +78,11 @@ export async function apiRequest<T>(
 export async function uploadProductImage(
   productId: string,
   file: File,
-): Promise<{ image_url: string }> {
+): Promise<Product> {
   const formData = new FormData();
   formData.append("file", file);
 
-  return apiRequest<{ image_url: string }>(
+  return apiRequest<Product>(
     `/products/${productId}/image`,
     {
       method: "POST",
