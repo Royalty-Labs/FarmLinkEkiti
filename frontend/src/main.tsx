@@ -14,6 +14,7 @@ import FarmerOrders from "./pages/farmer/FarmerOrders";
 import FarmProfile from "./pages/farmer/FarmProfile";
 import Listings from "./pages/farmer/Listings";
 import NewListing from "./pages/farmer/NewListing";
+import EditListing from "./pages/farmer/EditListing";
 import Overview from "./pages/farmer/Overview";
 import Welcome from "./pages/Welcome";
 import "./styles/app.css";
@@ -29,6 +30,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="register" element={<RegisterPage />} />
             <Route path="shop/products/:productId" element={<ProductDetail />} />
             <Route path="farm/listings/new" element={<RequireRole role="farmer"><NewListing /></RequireRole>} />
+            <Route path="farm/listings/:productId/edit" element={<RequireRole role="farmer"><EditListing /></RequireRole>} />
           </Route>
 
           <Route element={<BuyerShell />}>

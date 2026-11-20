@@ -91,7 +91,17 @@ export const createProduct = (data: {
   quantity_available: string;
 }) => apiRequest<Product>("/products", json("POST", data));
 
-export const updateProduct = (id: string, data: Partial<Pick<Product, "is_available">> & Record<string, unknown>) =>
+export type ProductUpdateData = {
+  name?: string;
+  description?: string | null;
+  category?: string;
+  price_per_unit?: string;
+  unit?: string;
+  quantity_available?: string;
+  is_available?: boolean;
+};
+
+export const updateProduct = (id: string, data: ProductUpdateData) =>
   apiRequest<Product>(`/products/${id}`, json("PATCH", data));
 
 export { uploadProductImage };
