@@ -1,10 +1,19 @@
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useNavigate } from "react-router";
 import { RequireRole } from "../auth/RequireRole";
+import { useAuth } from "../auth/useAuth";
 import { Icon, type IconName } from "../components/Icon";
 
 type NavItem = { to: string; label: string; icon: IconName; end?: boolean };
 
 function BottomNav({ items, label }: { items: NavItem[]; label: string }) {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  function handleSignOut() {
+    signOut();
+    navigate("/", { replace: true });
+  }
+
   return (
     <nav className="bottom-nav" aria-label={label}>
       {items.map((item) => (
@@ -18,6 +27,17 @@ function BottomNav({ items, label }: { items: NavItem[]; label: string }) {
           {item.label}
         </NavLink>
       ))}
+
+      {user && (
+        <button
+          type="button"
+          className="bottom-nav__item bottom-nav__signout"
+          onClick={handleSignOut}
+        >
+          <Icon name="logout" />
+          Sign out
+        </button>
+      )}
     </nav>
   );
 }
